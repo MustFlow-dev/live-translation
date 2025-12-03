@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IEEE FBU Stream</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root { --bg: #000000; --text-main: #ffffff; --highlight: #2563eb; }
+        body { background-color: var(--bg); color: var(--text-main); font-family: 'Inter', sans-serif; margin: 0; padding-bottom: 80px; }
+        header { position: sticky; top: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(10px); padding: 15px; border-bottom: 1px solid #333; z-index: 10; display: flex; justify-content: space-between; align-items: center; }
+        .brand { font-weight: 800; letter-spacing: 1px; color: var(--highlight); font-size: 0.9rem; }
+        .btn-summary { background: #2563eb; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
+        .container { padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+        .card { opacity: 0; transform: translateY(20px); animation: appear 0.5s forwards; }
+        .speaker { font-size: 0.8rem; font-weight: 700; text-transform: uppercase; color: var(--highlight); margin-bottom: 4px; }
+        .text-en { font-size: 1.3rem; line-height: 1.4; font-weight: 500; display: block; }
+        @keyframes appear { to { opacity: 1; transform: translateY(0); } }
+        .modal { display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.8); backdrop-filter: blur(5px); }
+        .modal-content { background-color: #1e1e1e; margin: 15% auto; padding: 20px; border: 1px solid #333; width: 80%; max-width: 500px; border-radius: 12px; position: relative; }
+        .close-btn { color: #aaa; float: right; font-size: 28px; font-weight: bold; cursor: pointer; }
+        .modal-body { white-space: pre-wrap; margin-top: 15px; color: #ddd; max-height: 300px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+<header>
+    <div class="brand">IEEE FBU • LIVE</div>
+    <button id="openSummary" class="btn-summary">📊 SUMMARY</button>
+</header>
+<div class="container" id="stream"></div>
+<div id="myModal" class="modal">
+    <div class="modal-content">
+        <span class="close-btn">&times;</span>
+        <div class="modal-body" id="modalText">Loading...</div>
+    </div>
+</div>
+<script>
+    let lastIndex = 0;
+    const streamDiv = document.getElementById('stream');
+    function fetchUpdates() {
+        fetch('/get_updates').then(res => res.json()).then(data => {
+            if (data.length > lastIndex) {
+                for (let i = lastIndex; i < data.length; i++) {
+                    const item = data[i];
+                    const card = document.createElement('div');
+                    card.className = 'card';
+                    card.innerHTML = `<div class="speaker">${item.speaker}</div><span class="text-en">${item.en}</span>`;
+                    streamDiv.appendChild(card);
+                }
+                window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+                lastIndex = data.length;
+            }
+        });
+    }
+    setInterval(fetchUpdates, 2000);
+    const modal = document.getElementById("myModal");
+    const btn = document.getElementById("openSummary");
+    const span = document.getElementsByClassName("close-btn")[0];
+    const modalBody = document.getElementById("modalText");
+    btn.onclick = async function() {
+        modal.style.display = "block";
+        modalBody.innerText = "Analyzing data...";
+        try {
+            const res = await fetch('/ozetle', {method: 'POST'});
+            const data = await res.json();
+            modalBody.innerText = data.summary;
+        } catch (e) { modalBody.innerText = "Error fetching summary."; }
+    }
+    span.onclick = function() { modal.style.display = "none"; }
+    window.onclick = function(event) { if (event.target == modal) modal.style.display = "none"; }
+</script>
+</body>
+</html>

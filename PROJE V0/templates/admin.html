@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>IEEE FBU Studio - Admin</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root { --bg: #0f172a; --card: #1e293b; --text: #f8fafc; --accent: #3b82f6; --success: #10b981; --danger: #ef4444; }
+        body { margin: 0; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        header { background: var(--card); padding: 15px 30px; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; }
+        .logo { font-size: 1.2rem; font-weight: 800; color: var(--accent); }
+        .btn-report { background: #f59e0b; color: #000; padding: 10px 20px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
+        .workspace { display: flex; flex: 1; overflow: hidden; }
+        .mixer-area { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 20px; align-content: flex-start; }
+        .mic-card { background: var(--card); width: 300px; padding: 20px; border-radius: 12px; border: 1px solid #334155; display: flex; flex-direction: column; gap: 10px; }
+        .mic-card.active { border-color: var(--danger); box-shadow: 0 0 15px rgba(239, 68, 68, 0.2); }
+        .card-header { font-weight: bold; color: #94a3b8; font-size: 0.8rem; text-transform: uppercase; }
+        .input-name, .select-mic { background: #0f172a; border: 1px solid #334155; color: white; padding: 8px; border-radius: 6px; width: 100%; box-sizing: border-box; }
+        .btn-toggle { padding: 12px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; background: var(--bg); border: 2px solid var(--success); color: var(--success); transition: 0.3s; width: 100%; }
+        .btn-toggle:hover { background: var(--success); color: white; }
+        .active .btn-toggle { background: var(--danger); border-color: var(--danger); color: white; }
+        .visualizer { height: 5px; background: #333; border-radius: 5px; overflow: hidden; margin-top: 5px; }
+        .volume-bar { height: 100%; width: 0%; background: var(--success); transition: width 0.1s; }
+        .qr-sidebar { width: 250px; background: #111; padding: 20px; border-left: 1px solid #333; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .qr-sidebar img { width: 100%; border: 4px solid white; border-radius: 10px; }
+        .add-card { border: 2px dashed #334155; display: flex; align-items: center; justify-content: center; width: 300px; height: 200px; border-radius: 12px; cursor: pointer; font-size: 3rem; color: #334155; transition: 0.3s; }
+        .add-card:hover { border-color: var(--accent); color: var(--accent); background: rgba(59, 130, 246, 0.05); }
+    </style>
+</head>
+<body>
+<header>
+    <div class="logo">🎙️ IEEE FBU STUDIO</div>
+    <button class="btn-report" onclick="getSummary()">📝 GENERATE REPORT</button>
+</header>
+<div class="workspace">
+    <div class="mixer-area" id="mixerBoard">
+        <div class="add-card" onclick="addNewMicCard()">+</div>
+    </div>
+    <div class="qr-sidebar">
+        <h3 style="color:#fff; margin-bottom:10px;">LIVE STREAM</h3>
+        <img src="{{ url_for('static', filename='qr_code.png') }}">
+        <p style="color:#666; font-size:0.7rem; margin-top:10px; word-break: break-all;">{{ qr_url }}</p>
+    </div>
+</div>
+<script>
+    let audioDevices = [];
+    async function getMicrophones() {
+        try {
+            await navigator.mediaDevices.getUserMedia({ audio: true });
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            audioDevices = devices.filter(device => device.kind === 'audioinput');
+        } catch (e) { console.error("Permission denied"); }
+    }
+
+    function addNewMicCard() {
+        const board = document.getElementById('mixerBoard');
+        const addBtn = document.querySelector('.add-card');
+        const cardId = 'mic_' + Date.now();
+        const card = document.createElement('div');
+        card.className = 'mic-card';
+        card.id = cardId;
+        
+        let options = audioDevices.map(d => `<option value="${d.deviceId}">${d.label || 'Microphone'}</option>`).join('');
+
+        card.innerHTML = `
+            <div class="card-header">CHANNEL SETTINGS</div>
+            <input type="text" class="input-name" placeholder="Speaker Name" value="Speaker">
+            <select class="select-mic">${options}</select>
+            <div class="visualizer"><div class="volume-bar"></div></div>
+            <button class="btn-toggle" onclick="toggleRecord('${cardId}')">START RECORDING</button>
+        `;
+        board.insertBefore(card, addBtn);
+    }
+
+    const recorders = {}; 
+
+    async function toggleRecord(cardId) {
+        const card = document.getElementById(cardId);
+        const btn = card.querySelector('.btn-toggle');
+        const micId = card.querySelector('.select-mic').value;
+        const speakerName = card.querySelector('.input-name').value;
+        const volBar = card.querySelector('.volume-bar');
+
+        if (!recorders[cardId]) {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: micId } } });
+                const audioContext = new AudioContext();
+                const source = audioContext.createMediaStreamSource(stream);
+                const analyser = audioContext.createAnalyser();
+                source.connect(analyser);
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                
+                const updateVol = () => {
+                    if(!recorders[cardId]) return;
+                    analyser.getByteFrequencyData(dataArray);
+                    const vol = dataArray.reduce((a,b)=>a+b) / dataArray.length;
+                    volBar.style.width = Math.min(vol * 2, 100) + '%';
+                    requestAnimationFrame(updateVol);
+                };
+
+                const mediaRecorder = new MediaRecorder(stream);
+                let audioChunks = [];
+                mediaRecorder.ondataavailable = event => audioChunks.push(event.data);
+                mediaRecorder.onstop = async () => {
+                    if (audioChunks.length > 0) {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                        sendData(audioBlob, speakerName);
+                        audioChunks = [];
+                    }
+                    if (recorders[cardId]) mediaRecorder.start();
+                };
+                mediaRecorder.start();
+                const interval = setInterval(() => {
+                    if (mediaRecorder.state !== "inactive") mediaRecorder.stop();
+                }, 5000);
+
+                recorders[cardId] = { recorder: mediaRecorder, stream: stream, interval: interval };
+                btn.innerText = "STOP";
+                card.classList.add('active');
+                updateVol();
+            } catch (err) { alert("Error: " + err.message); }
+        } else {
+            clearInterval(recorders[cardId].interval);
+            recorders[cardId].recorder.stop();
+            recorders[cardId].stream.getTracks().forEach(track => track.stop());
+            delete recorders[cardId];
+            btn.innerText = "START RECORDING";
+            card.classList.remove('active');
+            volBar.style.width = '0%';
+        }
+    }
+
+    async function sendData(blob, name) {
+        const formData = new FormData();
+        formData.append("audio_data", blob);
+        formData.append("speaker", name);
+        try { await fetch("/cevir", { method: "POST", body: formData }); } catch (e) { console.error(e); }
+    }
+
+    async function getSummary() {
+        const res = await fetch('/ozetle', {method: 'POST'});
+        const data = await res.json();
+        alert(data.summary);
+    }
+    getMicrophones();
+</script>
+</body>
+</html>
